@@ -1,11 +1,12 @@
 
 
 import React, { useState } from 'react';
-import { ClientFeedback, SatisfactionLevel } from '../types';
+import { SatisfactionLevel } from '../types';
+import { submitPublicFeedback } from '../lib/publicApi';
 import { StarIcon } from '../constants';
 
 interface PublicFeedbackFormProps {
-    setClientFeedback: React.Dispatch<React.SetStateAction<ClientFeedback[]>>;
+    showNotification?: (message: string) => void;
 }
 
 const getSatisfactionFromRating = (rating: number): SatisfactionLevel => {
@@ -15,7 +16,7 @@ const getSatisfactionFromRating = (rating: number): SatisfactionLevel => {
     return SatisfactionLevel.UNSATISFIED;
 };
 
-const PublicFeedbackForm: React.FC<PublicFeedbackFormProps> = ({ setClientFeedback }) => {
+const PublicFeedbackForm: React.FC<PublicFeedbackFormProps> = ({ showNotification }) => {
     const [formState, setFormState] = useState({
         clientName: '',
         rating: 0,
@@ -41,20 +42,25 @@ const PublicFeedbackForm: React.FC<PublicFeedbackFormProps> = ({ setClientFeedba
         }
         setIsSubmitting(true);
 
-        const newFeedback: ClientFeedback = {
-            id: `FB-PUB-${Date.now()}`,
+        const feedbackData = {
             clientName: formState.clientName,
             rating: formState.rating,
             satisfaction: getSatisfactionFromRating(formState.rating),
             feedback: formState.feedback,
-            date: new Date().toISOString(),
         };
 
-        setTimeout(() => {
-            setClientFeedback(prev => [newFeedback, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        submitPublicFeedback(feedbackData)
+            .then(() => {
             setIsSubmitting(false);
             setIsSubmitted(true);
-        }, 1000);
+            })
+            .catch((error) => {
+                console.error('Error submitting feedback:', error);
+                setIsSubmitting(false);
+                if (showNotification) {
+                    showNotification('Gagal mengirim masukan. Silakan coba lagi.');
+                }
+            });
     };
 
     if (isSubmitted) {

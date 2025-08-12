@@ -1,22 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Client, Project, Package, AddOn, Transaction, Profile, Card, FinancialPocket, ClientStatus, PaymentStatus, TransactionType, PromoCode, Lead, LeadStatus, ContactChannel, ClientType } from '../types';
+import { ClientStatus, PaymentStatus, TransactionType, LeadStatus, ContactChannel, ClientType } from '../types';
+import { getPublicBookingData, submitPublicBooking } from '../lib/publicApi';
 import Modal from './Modal';
 
 interface PublicBookingFormProps {
-    setClients: React.Dispatch<React.SetStateAction<Client[]>>;
-    setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
-    packages: Package[];
-    addOns: AddOn[];
-    setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
-    userProfile: Profile;
-    cards: Card[];
-    setCards: React.Dispatch<React.SetStateAction<Card[]>>;
-    pockets: FinancialPocket[];
-    setPockets: React.Dispatch<React.SetStateAction<FinancialPocket[]>>;
-    promoCodes: PromoCode[];
-    setPromoCodes: React.Dispatch<React.SetStateAction<PromoCode[]>>;
     showNotification: (message: string) => void;
-    setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
 }
 
 const formatCurrency = (amount: number) => {
@@ -80,8 +68,10 @@ const PackageCard: React.FC<{ pkg: Package, onSelect: () => void }> = ({ pkg, on
 
 
 const PublicBookingForm: React.FC<PublicBookingFormProps> = ({ 
-    setClients, setProjects, packages, addOns, setTransactions, userProfile, cards, setCards, pockets, setPockets, promoCodes, setPromoCodes, showNotification, setLeads
+    showNotification
 }) => {
+    const [bookingData, setBookingData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
     const [formData, setFormData] = useState({...initialFormState, projectType: userProfile.projectTypes[0] || ''});
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false);
@@ -91,13 +81,54 @@ const PublicBookingForm: React.FC<PublicBookingFormProps> = ({
     const [isContractModalOpen, setIsContractModalOpen] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
 
+    // Load booking data on component mount
+    useEffect(() => {
+        const loadBookingData = async () => {
+            try {
+                const data = await getPublicBookingData();
+                setBookingData(data);
+                setFormData(prev => ({ ...prev, projectType: data.profile?.projectTypes[0] || '' }));
+            } catch (error) {
+                console.error('Error loading booking data:', error);
+                showNotification('Gagal memuat data formulir. Silakan refresh halaman.');
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadBookingData();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-brand-bg">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-accent mx-auto mb-4"></div>
+                    <p className="text-brand-text-secondary">Memuat formulir...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!bookingData) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-brand-bg p-4">
+                <div className="w-full max-w-lg p-8 text-center bg-brand-surface rounded-2xl shadow-lg border border-brand-border">
+                    <h1 className="text-2xl font-bold text-brand-danger">Formulir Tidak Tersedia</h1>
+                    <p className="mt-4 text-brand-text-primary">Maaf, formulir booking sedang tidak tersedia. Silakan hubungi kami langsung.</p>
+                </div>
+            </div>
+        );
+    }
+
+    const { packages, addOns, promoCodes, profile: userProfile, cards } = bookingData;
+
     const handlePackageSelect = (packageId: string) => {
         setFormData(prev => ({ ...prev, packageId }));
         formRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
     const formattedTerms = useMemo(() => {
-        if (!userProfile.termsAndConditions) return null;
+        if (!userProfile?.termsAndConditions) return null;
         return userProfile.termsAndConditions.split('\n').map((line, index) => {
             if (line.trim() === '') return <div key={index} className="h-4"></div>;
             const emojiRegex = /^(📜|📅|💰|📦|⏱|➕)\s/;
@@ -217,57 +248,29 @@ const PublicBookingForm: React.FC<PublicBookingFormProps> = ({
             }
         }
 
-        const selectedAddOns = addOns.filter(addon => formData.selectedAddOnIds.includes(addon.id));
-        const remainingPayment = totalProject - dpAmount;
-
-        const newClientId = `CLI${Date.now()}`;
-        const newClient: Client = {
-            id: newClientId, name: formData.clientName, email: formData.email, phone: formData.phone, instagram: formData.instagram,
-            since: new Date().toISOString().split('T')[0], status: ClientStatus.ACTIVE, 
-            clientType: ClientType.DIRECT,
-            lastContact: new Date().toISOString(),
-            portalAccessId: crypto.randomUUID(),
+        const bookingFormData = {
+            clientName: formData.clientName,
+            email: formData.email,
+            phone: formData.phone,
+            instagram: formData.instagram,
+            projectName: formData.projectName || `Acara ${formData.clientName}`,
+            projectType: formData.projectType,
+            packageName: selectedPackage.name,
+            packageId: selectedPackage.id,
+            addOns: addOns.filter(addon => formData.selectedAddOnIds.includes(addon.id)),
+            date: formData.date,
+            location: formData.location,
+            totalCost: totalProject,
+            amountPaid: dpAmount,
+            paymentStatus: dpAmount > 0 ? (totalProject - dpAmount <= 0 ? PaymentStatus.LUNAS : PaymentStatus.DP_TERBAYAR) : PaymentStatus.BELUM_BAYAR,
+            notes: `Referensi Pembayaran DP: ${formData.dpPaymentRef}`,
+            promoCodeId: promoCodeAppliedId,
+            discountAmount: discountAmount > 0 ? discountAmount : 0,
+            dpProofUrl: dpProofUrl || '',
+            cardId: destinationCard.id,
         };
 
-        const newProject: Project = {
-            id: `PRJ${Date.now()}`, projectName: formData.projectName || `Acara ${formData.clientName}`, clientName: newClient.name, clientId: newClient.id,
-            projectType: formData.projectType, packageName: selectedPackage.name, packageId: selectedPackage.id, addOns: selectedAddOns,
-            date: formData.date, location: formData.location, progress: 0, status: 'Dikonfirmasi',
-            totalCost: totalProject, amountPaid: dpAmount,
-            paymentStatus: dpAmount > 0 ? (remainingPayment <= 0 ? PaymentStatus.LUNAS : PaymentStatus.DP_TERBAYAR) : PaymentStatus.BELUM_BAYAR,
-            team: [], notes: `Referensi Pembayaran DP: ${formData.dpPaymentRef}`, promoCodeId: promoCodeAppliedId, discountAmount: discountAmount > 0 ? discountAmount : undefined,
-            dpProofUrl: dpProofUrl || undefined,
-        };
-        
-        const newLead: Lead = {
-            id: `LEAD-FORM-${Date.now()}`,
-            name: newClient.name,
-            contactChannel: ContactChannel.WEBSITE,
-            location: newProject.location,
-            status: LeadStatus.CONVERTED,
-            date: new Date().toISOString().split('T')[0],
-            notes: `Dikonversi secara otomatis dari formulir pemesanan publik. Proyek: ${newProject.projectName}. Klien ID: ${newClient.id}`
-        };
-
-        setClients(prev => [newClient, ...prev]);
-        setProjects(prev => [newProject, ...prev]);
-        setLeads(prev => [newLead, ...prev]);
-
-        if (promoCodeAppliedId) {
-            setPromoCodes(prev => prev.map(p => p.id === promoCodeAppliedId ? { ...p, usageCount: p.usageCount + 1 } : p));
-        }
-
-        if (dpAmount > 0) {
-            const newTransaction: Transaction = {
-                id: `TRN-DP-${newProject.id}`, date: new Date().toISOString().split('T')[0], description: `DP Proyek ${newProject.projectName}`,
-                amount: dpAmount, type: TransactionType.INCOME, projectId: newProject.id, category: 'DP Proyek',
-                method: 'Transfer Bank', pocketId: 'POC005', cardId: destinationCard.id,
-            };
-            setTransactions(prev => [...prev, newTransaction].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setCards(prev => prev.map(c => c.id === destinationCard.id ? { ...c, balance: c.balance + dpAmount } : c));
-            setPockets(prev => prev.map(p => p.id === 'POC005' ? { ...p, amount: p.amount + dpAmount } : p));
-        }
-
+        await submitPublicBooking(bookingFormData);
         setIsSubmitting(false);
         setIsSubmitted(true);
         showNotification('Pemesanan baru dari klien diterima!');
@@ -424,7 +427,7 @@ const PublicBookingForm: React.FC<PublicBookingFormProps> = ({
                                         <div className="flex justify-between items-center font-bold text-lg"><span className="text-brand-text-secondary">Total Biaya</span><span className="text-brand-text-light">{formatCurrency(totalProject)}</span></div>
                                         <hr className="border-brand-border"/>
                                         <p className="text-sm text-brand-text-secondary">Silakan transfer Uang Muka (DP) ke rekening berikut:</p>
-                                        <p className="font-semibold text-brand-text-light text-center py-2 bg-brand-input rounded-md">{userProfile.bankAccount}</p>
+                                        <p className="font-semibold text-brand-text-light text-center py-2 bg-brand-input rounded-md">{userProfile?.bankAccount}</p>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="input-group !mt-2"><input type="number" name="dp" id="dp" value={formData.dp} onChange={handleFormChange} className="input-field text-right" placeholder=" "/><label htmlFor="dp" className="input-label">Jumlah DP Ditransfer</label></div>
                                             <div className="input-group !mt-2"><input type="text" name="dpPaymentRef" id="dpPaymentRef" value={formData.dpPaymentRef} onChange={handleFormChange} className="input-field" placeholder=" "/><label htmlFor="dpPaymentRef" className="input-label">No. Ref / 4 Digit Rek</label></div>

@@ -1,22 +1,35 @@
 
 import React, { useState, useMemo } from 'react';
-import { Lead, LeadStatus, ContactChannel, Profile } from '../types';
+import { LeadStatus, ContactChannel } from '../types';
+import { getPublicBookingData, submitPublicLead } from '../lib/publicApi';
 
 interface PublicLeadFormProps {
-    setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
-    userProfile: Profile;
     showNotification: (message: string) => void;
 }
 
-const PublicLeadForm: React.FC<PublicLeadFormProps> = ({ setLeads, userProfile }) => {
+const PublicLeadForm: React.FC<PublicLeadFormProps> = ({ showNotification }) => {
+    const [userProfile, setUserProfile] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
     const [formState, setFormState] = useState({
-        name: '',
-        eventType: userProfile.projectTypes[0] || '',
-        eventDate: '',
-        eventLocation: '',
+        name: '', eventType: '', eventDate: '', eventLocation: '',
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false);
+
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const data = await getPublicBookingData();
+                setUserProfile(data.profile);
+                setFormState(prev => ({ ...prev, eventType: data.profile?.projectTypes[0] || '' }));
+            } catch (error) {
+                console.error('Error loading data:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadData();
+    }, []);
 
     const bookingFormUrl = useMemo(() => {
         return `${window.location.origin}${window.location.pathname}#/public-booking`;
@@ -31,25 +44,34 @@ const PublicLeadForm: React.FC<PublicLeadFormProps> = ({ setLeads, userProfile }
         e.preventDefault();
         setIsSubmitting(true);
 
-        const notes = `Jenis Acara: ${formState.eventType}\nTanggal Acara: ${new Date(formState.eventDate).toLocaleDateString('id-ID')}\nLokasi Acara: ${formState.eventLocation}`;
-
-        const newLead: Lead = {
-            id: `LEAD-FORM-${Date.now()}`,
+        const leadData = {
             name: formState.name,
-            contactChannel: ContactChannel.WEBSITE, // Since it's from a web form
             location: formState.eventLocation,
-            status: LeadStatus.DISCUSSION, // Automatically placed in "Sedang Diskusi"
-            date: new Date().toISOString().split('T')[0],
-            notes: notes
+            notes: `Jenis Acara: ${formState.eventType}\nTanggal Acara: ${new Date(formState.eventDate).toLocaleDateString('id-ID')}\nLokasi Acara: ${formState.eventLocation}`,
         };
         
-        // Simulate API call
-        setTimeout(() => {
-            setLeads(prev => [newLead, ...prev]);
+        submitPublicLead(leadData)
+            .then(() => {
             setIsSubmitting(false);
             setIsSubmitted(true);
-        }, 1000);
+            })
+            .catch((error) => {
+                console.error('Error submitting lead:', error);
+                setIsSubmitting(false);
+                showNotification('Gagal mengirim formulir. Silakan coba lagi.');
+            });
     };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-brand-bg">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-accent mx-auto mb-4"></div>
+                    <p className="text-brand-text-secondary">Memuat formulir...</p>
+                </div>
+            </div>
+        );
+    }
 
     if (isSubmitted) {
         return (
@@ -81,7 +103,7 @@ const PublicLeadForm: React.FC<PublicLeadFormProps> = ({ setLeads, userProfile }
                     </div>
                     <div className="input-group">
                         <select id="eventType" name="eventType" value={formState.eventType} onChange={handleFormChange} className="input-field" required>
-                             {userProfile.projectTypes.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+                             {userProfile?.projectTypes?.map(pt => <option key={pt} value={pt}>{pt}</option>)}
                         </select>
                         <label htmlFor="eventType" className="input-label">Jenis Acara</label>
                     </div>

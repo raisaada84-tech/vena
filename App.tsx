@@ -451,35 +451,16 @@ const App: React.FC = () => {
   
   // ROUTING FOR PUBLIC PAGES
   if (route.startsWith('#/public-booking')) {
-    return <PublicBookingForm 
-        setClients={setClients}
-        setProjects={setProjects}
-        packages={packages}
-        addOns={addOns}
-        setTransactions={setTransactions}
-        userProfile={profile}
-        cards={cards}
-        setCards={setCards}
-        pockets={pockets}
-        setPockets={setPockets}
-        promoCodes={promoCodes}
-        setPromoCodes={setPromoCodes}
-        showNotification={showNotification}
-        setLeads={setLeads}
-    />;
+    return <PublicBookingForm showNotification={showNotification} />;
   }
   if (route.startsWith('#/public-lead-form')) {
-    return <PublicLeadForm 
-        setLeads={setLeads}
-        userProfile={profile}
-        showNotification={showNotification}
-    />;
+    return <PublicLeadForm showNotification={showNotification} />;
   }
   if (route.startsWith('#/feedback')) {
-    return <PublicFeedbackForm setClientFeedback={setClientFeedback} />;
+    return <PublicFeedbackForm showNotification={showNotification} />;
   }
   if (route.startsWith('#/suggestion-form')) {
-    return <SuggestionForm setLeads={setLeads} />;
+    return <SuggestionForm showNotification={showNotification} />;
   }
   if (route.startsWith('#/revision-form')) {
     return <PublicRevisionForm projects={projects} teamMembers={teamMembers} onUpdateRevision={handleUpdateRevision} />;

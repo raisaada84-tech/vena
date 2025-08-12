@@ -1,13 +1,14 @@
 
 
 import React, { useState } from 'react';
-import { Lead, LeadStatus, ContactChannel } from '../types';
+import { LeadStatus, ContactChannel } from '../types';
+import { submitPublicLead } from '../lib/publicApi';
 
 interface SuggestionFormProps {
-    setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
+    showNotification: (message: string) => void;
 }
 
-const SuggestionForm: React.FC<SuggestionFormProps> = ({ setLeads }) => {
+const SuggestionForm: React.FC<SuggestionFormProps> = ({ showNotification }) => {
     const [name, setName] = useState('');
     const [contact, setContact] = useState('');
     const [message, setMessage] = useState('');
@@ -18,22 +19,22 @@ const SuggestionForm: React.FC<SuggestionFormProps> = ({ setLeads }) => {
         e.preventDefault();
         setIsSubmitting(true);
 
-        const newLead: Lead = {
-            id: `LEAD-SUG-${Date.now()}`,
+        const leadData = {
             name: name,
-            contactChannel: ContactChannel.SUGGESTION_FORM,
             location: 'Form Online',
-            status: LeadStatus.DISCUSSION,
-            date: new Date().toISOString().split('T')[0],
-            notes: `Kontak: ${contact}\n\nPesan:\n${message}`
+            notes: `Kontak: ${contact}\n\nPesan:\n${message}`,
         };
 
-        // Simulate API call to save the lead
-        setTimeout(() => {
-            setLeads(prev => [newLead, ...prev]);
+        submitPublicLead(leadData)
+            .then(() => {
             setIsSubmitting(false);
             setIsSubmitted(true);
-        }, 1000);
+            })
+            .catch((error) => {
+                console.error('Error submitting suggestion:', error);
+                setIsSubmitting(false);
+                showNotification('Gagal mengirim saran. Silakan coba lagi.');
+            });
     };
     
     const Logo = () => (
